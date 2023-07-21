@@ -36,9 +36,10 @@ class BrandController {
 
                 brandProducts.push({ productName, imageUrl, slug });
             });
+
             const pagesDom = $(".nav-pages a");
             const totalPages = pagesDom.length;
-            while (brandProducts.length < limit || paginatedIndex === totalPages) {
+            while (brandProducts.length < limit && paginatedIndex <= totalPages-1) {
                 const nextPageSlug = pagesDom[paginatedIndex].attributes[0].value;
                 const nextDom = await this.getDomStructure(`${request.url}/${nextPageSlug}`);
                 nextDom(".makers li a").each((index: any, element: any) => {
@@ -51,7 +52,7 @@ class BrandController {
                 paginatedIndex++;
             }
             const resArray = brandProducts.length > limit ? brandProducts.slice(0,limit): brandProducts;
-            return response.send({ totalPages, totalRecords: resArray.length, products: resArray });
+            return response.send({ totalPages, productCount: resArray.length, products: resArray });
         } catch (error) {
             response.send("Error while getting data");
             console.log(error)
@@ -60,6 +61,7 @@ class BrandController {
 
     public async getProductsDetails(request: express.Request, response: express.Response) {
         try {
+            const pageHTMLPromiseArr: any = [];
             const res: any = {
                 payload: [],
                 message: "Products received successfully"
@@ -67,20 +69,24 @@ class BrandController {
             const { body: { mobileSlugs = [] } } = request;
 
             for (const i in mobileSlugs) {
+                pageHTMLPromiseArr.push(axios.get(`${request.url}/${mobileSlugs[i]}`).then((res) => {
+                    const responseData = cheerio.load(res.data);
+                    return responseData;
+                }));
+            }
+            const pageHTML = await Promise.all(pageHTMLPromiseArr);
+            for (const i in pageHTML) {
                 const productDetail: any = {};
-
-                const pageHTML = await axios.get(`${request.url}/${mobileSlugs[i]}`);
-                const $ = cheerio.load(pageHTML.data);
-                const title = $(".specs-phone-name-title").text()
-                $("tbody").each((index: any, row: any) => {
-                    const header = $("th", row).text();
+                const title = pageHTML[i](".specs-phone-name-title").text()
+                pageHTML[i]("tbody").each((index: any, row: any) => {
+                    const header = pageHTML[i]("th", row).text();
                     productDetail[header] = {}
-                    const subHeader = $(".ttl", row);
-                    const subData = $(".nfo", row);
+                    const subHeader = pageHTML[i](".ttl", row);
+                    const subData = pageHTML[i](".nfo", row);
 
                     subHeader.each((index: any, rowData: any) => {
                         const data = subData[index].children[0].data || subData[index].children[0].children[0].data;
-                        productDetail[header][$("a", rowData).text()] = data;
+                        productDetail[header][pageHTML[i]("a", rowData).text()] = data;
                     })
                 });
                 res.payload.push({ title, products: productDetail })
